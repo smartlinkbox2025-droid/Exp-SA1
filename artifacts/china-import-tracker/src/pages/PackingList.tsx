@@ -4,14 +4,24 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { PackingListSchema, PackingList, PackingListItem } from "@/lib/storage";
 import { usePackingLists } from "@/hooks/useLocalStorage";
 import { calculatePackingListTotals, formatNumber } from "@/lib/calculations";
-import { exportPackingListPDF, exportPackingListExcel } from "@/lib/export";
+import {
+  exportPackingListPDF,
+  exportPackingListExcel,
+  exportMultiPackingListPDF,
+  exportMultiPackingListExcel,
+} from "@/lib/export";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PackageCheck, Save, FileText, Download, Trash2, Edit, Plus, Box } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  PackageCheck, Save, FileText, Download, Trash2, Edit,
+  Plus, Box, CheckSquare, Square, FileSpreadsheet,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { motion, AnimatePresence } from "framer-motion";
 
 const formSchema = PackingListSchema.omit({ id: true, createdAt: true, updatedAt: true });
 type FormData = z.infer<typeof formSchema>;
@@ -31,24 +41,25 @@ const defaultValues: FormData = {
       length: 0,
       width: 0,
       height: 0,
-      unitValueUSD: 0
-    }
-  ]
+      unitValueUSD: 0,
+    },
+  ],
 };
 
 export default function PackingListManager() {
   const { packingLists, saveList, deleteList } = usePackingLists();
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
-    defaultValues
+    defaultValues,
   });
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: "items"
+    name: "items",
   });
 
   const watchItems = form.watch("items");
@@ -59,17 +70,17 @@ export default function PackingListManager() {
     const list: PackingList = {
       ...data,
       id: editingId || `pl-${now}`,
-      createdAt: editingId ? (packingLists.find(l => l.id === editingId)?.createdAt || now) : now,
-      updatedAt: now
+      createdAt: editingId
+        ? packingLists.find((l) => l.id === editingId)?.createdAt || now
+        : now,
+      updatedAt: now,
     };
     saveList(list);
     toast({
       title: "تم الحفظ بنجاح",
-      description: `تم حفظ بيان التعبئة للبوليصة ${data.billOfLading}`
+      description: `تم حفظ بيان التعبئة للبوليصة ${data.billOfLading}`,
     });
-    if (!editingId) {
-      form.reset(defaultValues);
-    }
+    if (!editingId) form.reset(defaultValues);
   };
 
   const handleEdit = (list: PackingList) => {
@@ -81,12 +92,41 @@ export default function PackingListManager() {
   const handleDelete = (id: string) => {
     if (confirm("هل أنت متأكد من حذف هذا البيان؟")) {
       deleteList(id);
-      if (editingId === id) {
-        setEditingId(null);
-        form.reset(defaultValues);
-      }
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      if (editingId === id) { setEditingId(null); form.reset(defaultValues); }
       toast({ title: "تم الحذف", description: "تم حذف بيان التعبئة", variant: "destructive" });
     }
+  };
+
+  // ── Selection helpers ──────────────────────────────────────────────────────
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(
+      selectedIds.size === packingLists.length
+        ? new Set()
+        : new Set(packingLists.map((l) => l.id))
+    );
+
+  const selectedLists = packingLists.filter((l) => selectedIds.has(l.id));
+  const allSelected = packingLists.length > 0 && selectedIds.size === packingLists.length;
+  const someSelected = selectedIds.size > 0;
+
+  const handleMultiPDF = () => {
+    if (!someSelected) return;
+    exportMultiPackingListPDF(selectedLists);
+    toast({ title: "تم تصدير PDF", description: `تم تصدير ${selectedLists.length} بيان في ملف واحد` });
+  };
+
+  const handleMultiExcel = () => {
+    if (!someSelected) return;
+    exportMultiPackingListExcel(selectedLists);
+    toast({ title: "تم تصدير Excel", description: `تم تصدير ${selectedLists.length} بيان في ملف واحد` });
   };
 
   return (
@@ -104,7 +144,11 @@ export default function PackingListManager() {
           <CardTitle className="text-lg flex justify-between items-center">
             <span>{editingId ? "تعديل بيان تعبئة" : "بيان تعبئة جديد"}</span>
             {editingId && (
-              <Button variant="ghost" size="sm" onClick={() => { setEditingId(null); form.reset(defaultValues); }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setEditingId(null); form.reset(defaultValues); }}
+              >
                 إلغاء التعديل
               </Button>
             )}
@@ -112,7 +156,6 @@ export default function PackingListManager() {
         </CardHeader>
         <CardContent className="pt-6">
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            
             {/* Header Info */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -133,23 +176,25 @@ export default function PackingListManager() {
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-2">
                 <h3 className="font-semibold text-primary">الأصناف والتعبئة</h3>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   className="gap-2 text-primary"
-                  onClick={() => append({
-                    id: `temp-${Date.now()}`,
-                    productName: "",
-                    cartonsCount: 1,
-                    unitsPerCarton: 1,
-                    netWeightPerCarton: 0,
-                    grossWeightPerCarton: 0,
-                    length: 0,
-                    width: 0,
-                    height: 0,
-                    unitValueUSD: 0
-                  })}
+                  onClick={() =>
+                    append({
+                      id: `temp-${Date.now()}`,
+                      productName: "",
+                      cartonsCount: 1,
+                      unitsPerCarton: 1,
+                      netWeightPerCarton: 0,
+                      grossWeightPerCarton: 0,
+                      length: 0,
+                      width: 0,
+                      height: 0,
+                      unitValueUSD: 0,
+                    })
+                  }
                 >
                   <Plus className="w-4 h-4" /> إضافة صنف
                 </Button>
@@ -159,10 +204,10 @@ export default function PackingListManager() {
                 {fields.map((field, index) => (
                   <div key={field.id} className="p-4 bg-muted/20 border rounded-lg relative">
                     <div className="absolute top-2 left-2">
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="icon" 
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
                         className="text-red-500 hover:text-red-700 hover:bg-red-50"
                         onClick={() => remove(index)}
                         disabled={fields.length === 1}
@@ -170,10 +215,15 @@ export default function PackingListManager() {
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
-                    
+
                     <div className="mb-4 pr-8">
-                      <Label className="text-muted-foreground text-xs mb-1 block">المنتج (الصنف {index + 1})</Label>
-                      <Input placeholder="اسم المنتج" {...form.register(`items.${index}.productName`)} />
+                      <Label className="text-muted-foreground text-xs mb-1 block">
+                        المنتج (الصنف {index + 1})
+                      </Label>
+                      <Input
+                        placeholder="اسم المنتج"
+                        {...form.register(`items.${index}.productName`)}
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -235,8 +285,12 @@ export default function PackingListManager() {
                   <p className="text-xl font-bold">${formatNumber(totals.totalValueUSD, 2)}</p>
                 </div>
               </div>
-              
-              <Button type="submit" size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2 ml-auto w-full md:w-auto mt-4 md:mt-0">
+
+              <Button
+                type="submit"
+                size="lg"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2 ml-auto w-full md:w-auto mt-4 md:mt-0"
+              >
                 <Save className="w-5 h-5" />
                 {editingId ? "تحديث البيان" : "حفظ البيان"}
               </Button>
@@ -245,9 +299,73 @@ export default function PackingListManager() {
         </CardContent>
       </Card>
 
-      {/* Saved Lists */}
+      {/* ── Saved Lists ───────────────────────────────────────────────────────── */}
       <div className="space-y-4 pt-8">
-        <h3 className="text-xl font-bold border-b pb-2">بيانات التعبئة المحفوظة ({packingLists.length})</h3>
+
+        {/* Toolbar row */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <h3 className="text-xl font-bold">
+            بيانات التعبئة المحفوظة ({packingLists.length})
+          </h3>
+
+          {packingLists.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Select-all toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-xs"
+                onClick={toggleSelectAll}
+              >
+                {allSelected ? (
+                  <CheckSquare className="w-4 h-4 text-primary" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                {allSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+              </Button>
+
+              {/* Bulk export buttons – animated in when something is selected */}
+              <AnimatePresence>
+                {someSelected && (
+                  <motion.div
+                    className="flex items-center gap-2"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-1 rounded-full">
+                      {selectedIds.size} محدد
+                    </span>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+                      onClick={handleMultiPDF}
+                    >
+                      <FileText className="w-4 h-4" />
+                      تصدير PDF
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 text-green-600 border-green-300 hover:bg-green-50"
+                      onClick={handleMultiExcel}
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      تصدير Excel
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+
+        {/* Cards */}
         {packingLists.length === 0 ? (
           <div className="text-center py-12 bg-muted/20 rounded-xl border border-dashed">
             <Box className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
@@ -258,17 +376,36 @@ export default function PackingListManager() {
             {packingLists.map((list) => {
               const listTotals = calculatePackingListTotals(list.items);
               const isActive = editingId === list.id;
-              
+              const isChecked = selectedIds.has(list.id);
+
               return (
-                <Card key={list.id} className={`transition-all ${isActive ? 'ring-2 ring-primary border-primary' : 'hover:border-primary/50'}`}>
+                <Card
+                  key={list.id}
+                  className={`transition-all ${
+                    isChecked
+                      ? "ring-2 ring-primary border-primary bg-primary/5"
+                      : isActive
+                      ? "ring-2 ring-primary border-primary"
+                      : "hover:border-primary/50"
+                  }`}
+                >
                   <CardHeader className="p-4 pb-2">
-                    <CardTitle className="text-base font-bold flex justify-between">
-                      <span className="truncate pr-2">{list.supplierName}</span>
-                      <span className="text-xs bg-muted px-2 py-1 rounded font-mono font-normal">
-                        {list.billOfLading || 'بدون بوليصة'}
+                    <CardTitle className="text-base font-bold flex items-start justify-between gap-2">
+                      {/* Checkbox */}
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleSelect(list.id)}
+                        className="mt-0.5 shrink-0"
+                        aria-label={`تحديد ${list.supplierName}`}
+                      />
+
+                      <span className="truncate flex-1">{list.supplierName}</span>
+
+                      <span className="text-xs bg-muted px-2 py-1 rounded font-mono font-normal shrink-0">
+                        {list.billOfLading || "بدون بوليصة"}
                       </span>
                     </CardTitle>
-                    <CardDescription className="text-xs line-clamp-1">
+                    <CardDescription className="text-xs line-clamp-1 pr-6">
                       {list.goodsDescription}
                     </CardDescription>
                   </CardHeader>
@@ -287,18 +424,41 @@ export default function PackingListManager() {
                         <span className="font-bold">{formatNumber(listTotals.totalGrossWeight, 0)}</span>
                       </div>
                     </div>
-                    
+
                     <div className="flex flex-wrap gap-2 justify-end">
-                      <Button variant="outline" size="sm" className="h-8 flex-1" onClick={() => handleEdit(list)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 flex-1"
+                        onClick={() => handleEdit(list)}
+                      >
                         <Edit className="w-3.5 h-3.5 ml-1.5" /> تعديل
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-blue-600" onClick={() => exportPackingListPDF(list)} title="تصدير PDF">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-blue-600"
+                        onClick={() => exportPackingListPDF(list)}
+                        title="تصدير PDF"
+                      >
                         <FileText className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportPackingListExcel(list)} title="تصدير Excel">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-green-600"
+                        onClick={() => exportPackingListExcel(list)}
+                        title="تصدير Excel"
+                      >
                         <Download className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(list.id)} title="حذف">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => handleDelete(list.id)}
+                        title="حذف"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
