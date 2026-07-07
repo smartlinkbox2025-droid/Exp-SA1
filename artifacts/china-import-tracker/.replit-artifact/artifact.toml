@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "China Import Tracker - مستورد الصين"
+version = "1.0.0"
+id = "artifacts/china-import-tracker"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23529
+
+[services.development]
+run = "pnpm --filter @workspace/china-import-tracker run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/china-import-tracker", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/china-import-tracker/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23529"
+BASE_PATH = "/"

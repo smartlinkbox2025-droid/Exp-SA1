@@ -1,0 +1,34 @@
+Create a complete, single-page Progressive Web App (PWA) designed to work offline, storing all data locally in the user's mobile browser storage (LocalStorage/IndexedDB) with zero cloud dependency and zero operational cost. 
+
+The application must be fully in Arabic (اللغة العربية) with a modern, responsive, mobile-first UI (using Tailwind CSS and Lucide Icons for clean visuals). The app is a specialized Feasibility Study & Logistics Tracker for importing goods from China to Saudi Arabia.
+
+Key Features & Architecture Required:
+
+1. Arabic Interface & Localization:
+- All labels, buttons, inputs, and reports must be in professional Saudi trade and import terminology (e.g., الفسح الجمركي, شهادة سابر, ضريبة القيمة المضافة, أجور الشحن).
+- Right-to-Left (RTL) layout support.
+
+2. Cost & Feasibility Calculator (حاسبة دراسة الجدوى الشاملة):
+- Input Fields: Product Name, Factory Price (RMB or USD), Quantity, Carton Dimensions/Weight, Domestic Shipping in China, Sea/Air Freight Cost, Custom Duty % (الرسوم الجمركية), VAT (15%), Clearance Fees (أجور التخليص), Saudi Internal Logistics (الشحن الداخلي للمستودع), and Certifications (SABER/SFDA fees).
+- Automatic Currency Conversion: Convert RMB/USD to SAR automatically (hardcode realistic rates or allow manual override: e.g., 1 USD = 3.75 SAR).
+- Output Analytics: Total Landed Cost per unit and total (التكلفة الإجمالية واصل المستودع), Recommended Selling Price, Net Profit Margin (هامش الربح), ROI %, and Risk Assessment Score (نسبة المخاطرة بناءً على بنود التكلفة والشهادات المطلوبة).
+
+3. Documentation & Export Engine:
+- Packing List Generator (إنشاء بيان التعبئة): A form to generate a clean Packing List based on selected products (Gross weight, Net weight, CBM, Cartons count).
+- Export Functions: Add buttons to export the feasibility results and packing lists into professionally formatted PDF files and Excel (CSV) files directly from the browser without server calls.
+
+4. Shipment & Order Tracker (قسم متابعة الشحنات):
+- A visual pipeline/kanban or step-by-step tracker for ordered products with status stages:
+  * تم الشراء (Purchased)
+  * في مستودع الصين (In China Warehouse)
+  * في البحر/الجو (In Transit)
+  * التخليص الجمركي (Customs Clearance)
+  * واصل للمستودع (Delivered)
+- Ability to update status, add container/tracking numbers, and save notes locally.
+
+5. Technical Constraints for Zero-Cost & Privacy:
+- Must be a PWA (include manifest.json and a basic service worker for offline installation on iOS/Android).
+- Absolutely NO external backend, NO databases (like Firebase/Supabase). Use browser local storage to save, edit, and delete products and shipments.
+- Code should be clean, modular, and contained in a structured frontend framework (like React with Vite or Next.js static export, or pure HTML/JS if simpler) to ensure Replit can compile it instantly.
+
+Provide a fully working application with mock data pre-loaded for demonstration so I can test it immediately.
