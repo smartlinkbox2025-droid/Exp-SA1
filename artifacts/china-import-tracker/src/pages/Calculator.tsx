@@ -107,8 +107,8 @@ export default function Calculator() {
   const allSelected = studies.length > 0 && selectedIds.size === studies.length;
   const someSelected = selectedIds.size > 0;
 
-  const handleMultiPDF = () => {
-    exportMultiStudyPDF(selectedStudies);
+  const handleMultiPDF = async () => {
+    await exportMultiStudyPDF(selectedStudies);
     toast({ title: "تم تصدير PDF", description: `تم تصدير ${selectedStudies.length} دراسة في ملف واحد` });
   };
   const handleMultiExcel = () => {
@@ -484,7 +484,7 @@ export default function Calculator() {
                       <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => handleDuplicate(study)} title="تكرار">
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-blue-600" onClick={() => exportStudyPDF(study)} title="تصدير PDF">
+                      <Button variant="outline" size="sm" className="h-8 px-2 text-blue-600" onClick={() => exportStudyPDF(study).catch(console.error)} title="تصدير PDF">
                         <FileText className="w-3.5 h-3.5" />
                       </Button>
                       <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportStudyExcel(study)} title="تصدير Excel">

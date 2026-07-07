@@ -117,9 +117,9 @@ export default function PackingListManager() {
   const allSelected = packingLists.length > 0 && selectedIds.size === packingLists.length;
   const someSelected = selectedIds.size > 0;
 
-  const handleMultiPDF = () => {
+  const handleMultiPDF = async () => {
     if (!someSelected) return;
-    exportMultiPackingListPDF(selectedLists);
+    await exportMultiPackingListPDF(selectedLists);
     toast({ title: "تم تصدير PDF", description: `تم تصدير ${selectedLists.length} بيان في ملف واحد` });
   };
 
@@ -438,7 +438,7 @@ export default function PackingListManager() {
                         variant="outline"
                         size="sm"
                         className="h-8 px-2 text-blue-600"
-                        onClick={() => exportPackingListPDF(list)}
+                        onClick={() => exportPackingListPDF(list).catch(console.error)}
                         title="تصدير PDF"
                       >
                         <FileText className="w-3.5 h-3.5" />

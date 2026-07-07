@@ -1,0 +1,1 @@
+- [Arabic PDF rendering with jsPDF](arabic-pdf-jspdf.md) — Cairo TTF + presentation-form reshaper + fmt() (en-US digits); see topic file for full approach and pitfalls.

@@ -104,9 +104,9 @@ export default function Tracker() {
     setNewNoteText("");
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (shipments.length === 0) return;
-    exportShipmentsPDF(shipments);
+    await exportShipmentsPDF(shipments);
     toast({ title: "تم تصدير PDF", description: `تم تصدير ${shipments.length} شحنة` });
   };
 
