@@ -14,6 +14,8 @@ export function convertToSAR(amount: number, currency: string): number {
 export interface CalculatedStudy {
   totalLandedCostSAR: number;
   costPerUnitLandedSAR: number;
+  netProfitSAR: number;
+  netProfitPerUnitSAR: number;
   netProfitMarginPct: number;
   roiPct: number;
   riskScore: number;
@@ -92,9 +94,13 @@ export function calculateFeasibility(study: Partial<FeasibilityStudy>): Calculat
 
   riskScore = Math.max(1, Math.min(10, riskScore));
 
+  const netProfitPerUnitSAR = quantity > 0 ? netProfitSAR / quantity : 0;
+
   return {
     totalLandedCostSAR,
     costPerUnitLandedSAR,
+    netProfitSAR,
+    netProfitPerUnitSAR,
     netProfitMarginPct,
     roiPct,
     riskScore,

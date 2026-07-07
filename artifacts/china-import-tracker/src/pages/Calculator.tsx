@@ -1,22 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { FeasibilityStudySchema, FeasibilityStudy, Currency } from "@/lib/storage";
 import { useFeasibilityStudies } from "@/hooks/useLocalStorage";
 import { calculateFeasibility, formatNumber, RATES } from "@/lib/calculations";
-import { exportStudyPDF, exportStudyExcel } from "@/lib/export";
-import { 
-  Card, CardContent, CardHeader, CardTitle, CardDescription 
-} from "@/components/ui/card";
+import {
+  exportStudyPDF, exportStudyExcel,
+  exportMultiStudyPDF, exportMultiStudyExcel,
+} from "@/lib/export";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calculator as CalcIcon, Save, FileText, Download, Trash2, Copy, Edit, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Calculator as CalcIcon, Save, FileText, Download, Trash2, Copy,
+  Edit, CheckSquare, Square, FileSpreadsheet,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { motion, AnimatePresence } from "framer-motion";
 
 const formSchema = FeasibilityStudySchema.omit({ id: true, createdAt: true, updatedAt: true });
 type FormData = z.infer<typeof formSchema>;
@@ -38,17 +44,18 @@ const defaultValues: FormData = {
   clearanceFeeSAR: 0,
   localLogisticsSAR: 0,
   certificationFeeSAR: 0,
-  targetSellingPrice: 0
+  targetSellingPrice: 0,
 };
 
 export default function Calculator() {
   const { studies, saveStudy, deleteStudy } = useFeasibilityStudies();
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
-    defaultValues
+    defaultValues,
   });
 
   const watchAll = form.watch();
@@ -59,17 +66,12 @@ export default function Calculator() {
     const study: FeasibilityStudy = {
       ...data,
       id: editingId || `study-${now}`,
-      createdAt: editingId ? (studies.find(s => s.id === editingId)?.createdAt || now) : now,
-      updatedAt: now
+      createdAt: editingId ? (studies.find((s) => s.id === editingId)?.createdAt || now) : now,
+      updatedAt: now,
     };
     saveStudy(study);
-    toast({
-      title: "تم الحفظ بنجاح",
-      description: `تم حفظ دراسة الجدوى لـ ${data.productName}`
-    });
-    if (!editingId) {
-      form.reset(defaultValues);
-    }
+    toast({ title: "تم الحفظ بنجاح", description: `تم حفظ دراسة الجدوى لـ ${data.productName}` });
+    if (!editingId) form.reset(defaultValues);
   };
 
   const handleEdit = (study: FeasibilityStudy) => {
@@ -81,34 +83,43 @@ export default function Calculator() {
   const handleDuplicate = (study: FeasibilityStudy) => {
     const { id, createdAt, updatedAt, ...rest } = study;
     const now = Date.now();
-    saveStudy({
-      ...rest,
-      productName: `${rest.productName} (نسخة)`,
-      id: `study-${now}`,
-      createdAt: now,
-      updatedAt: now
-    });
+    saveStudy({ ...rest, productName: `${rest.productName} (نسخة)`, id: `study-${now}`, createdAt: now, updatedAt: now });
     toast({ title: "تم التكرار", description: "تم إنشاء نسخة من دراسة الجدوى" });
   };
 
   const handleDelete = (id: string) => {
     if (confirm("هل أنت متأكد من حذف هذه الدراسة؟")) {
       deleteStudy(id);
-      if (editingId === id) {
-        setEditingId(null);
-        form.reset(defaultValues);
-      }
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      if (editingId === id) { setEditingId(null); form.reset(defaultValues); }
       toast({ title: "تم الحذف", description: "تم حذف دراسة الجدوى", variant: "destructive" });
     }
   };
 
-  const riskColor = calculated.riskScore <= 3 ? "text-green-600 bg-green-100" : 
-                    calculated.riskScore <= 6 ? "text-yellow-600 bg-yellow-100" : 
-                    "text-red-600 bg-red-100";
-                    
-  const riskLabel = calculated.riskScore <= 3 ? "منخفضة" : 
-                    calculated.riskScore <= 6 ? "متوسطة" : 
-                    "عالية";
+  // ── Selection helpers ──────────────────────────────────────────────────────
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(selectedIds.size === studies.length ? new Set() : new Set(studies.map((s) => s.id)));
+
+  const selectedStudies = studies.filter((s) => selectedIds.has(s.id));
+  const allSelected = studies.length > 0 && selectedIds.size === studies.length;
+  const someSelected = selectedIds.size > 0;
+
+  const handleMultiPDF = () => {
+    exportMultiStudyPDF(selectedStudies);
+    toast({ title: "تم تصدير PDF", description: `تم تصدير ${selectedStudies.length} دراسة في ملف واحد` });
+  };
+  const handleMultiExcel = () => {
+    exportMultiStudyExcel(selectedStudies);
+    toast({ title: "تم تصدير Excel", description: `تم تصدير ${selectedStudies.length} دراسة في ملف واحد` });
+  };
+
+  const riskLabel =
+    calculated.riskScore <= 3 ? "منخفضة" : calculated.riskScore <= 6 ? "متوسطة" : "عالية";
+
+  const profitPositive = calculated.netProfitSAR >= 0;
 
   return (
     <div className="space-y-8 pb-12">
@@ -121,7 +132,7 @@ export default function Calculator() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        
+
         {/* Form Column */}
         <div className="xl:col-span-8 space-y-6">
           <Card className="border-t-4 border-t-primary shadow-md">
@@ -137,7 +148,7 @@ export default function Calculator() {
             </CardHeader>
             <CardContent className="pt-6">
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                
+
                 {/* Product Info */}
                 <div className="space-y-4">
                   <h3 className="font-semibold text-primary border-b pb-2">معلومات المنتج الأساسية</h3>
@@ -152,13 +163,8 @@ export default function Calculator() {
                     </div>
                     <div className="space-y-2">
                       <Label>عملة الشراء</Label>
-                      <Select 
-                        value={form.watch("currency")} 
-                        onValueChange={(val: Currency) => form.setValue("currency", val)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="اختر العملة" />
-                        </SelectTrigger>
+                      <Select value={form.watch("currency")} onValueChange={(val: Currency) => form.setValue("currency", val)}>
+                        <SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="RMB">RMB (يوان صيني) - {RATES.RMB_TO_SAR} ر.س</SelectItem>
                           <SelectItem value="USD">USD (دولار أمريكي) - {RATES.USD_TO_SAR} ر.س</SelectItem>
@@ -266,14 +272,19 @@ export default function Calculator() {
                 <CardTitle className="text-xl">النتائج الفورية</CardTitle>
                 <CardDescription className="text-sidebar-foreground/70">حسابات التكلفة والأرباح</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6 pt-4">
-                
+              <CardContent className="space-y-5 pt-4">
+
+                {/* Total landed cost */}
                 <div className="space-y-1">
                   <p className="text-sm text-sidebar-foreground/80">إجمالي التكلفة الواصلة</p>
-                  <p className="text-3xl font-bold text-white">{formatNumber(calculated.totalLandedCostSAR)} <span className="text-sm font-normal text-sidebar-primary">ر.س</span></p>
+                  <p className="text-3xl font-bold text-white">
+                    {formatNumber(calculated.totalLandedCostSAR)}{" "}
+                    <span className="text-sm font-normal text-sidebar-primary">ر.س</span>
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Cost/unit + min price */}
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1 bg-sidebar-accent/50 p-3 rounded-lg">
                     <p className="text-xs text-sidebar-foreground/70">التكلفة للوحدة</p>
                     <p className="text-lg font-bold">{formatNumber(calculated.costPerUnitLandedSAR)} <span className="text-xs">ر.س</span></p>
@@ -284,18 +295,40 @@ export default function Calculator() {
                   </div>
                 </div>
 
+                {/* ── Profit in SAR ── */}
+                <div className={`rounded-lg p-3 border ${profitPositive ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+                  <p className="text-xs text-sidebar-foreground/70 mb-2">الربح بالريال السعودي</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-sidebar-foreground/60 mb-0.5">إجمالي الربح</p>
+                      <p className={`text-lg font-bold ${profitPositive ? "text-green-400" : "text-red-400"}`}>
+                        {formatNumber(calculated.netProfitSAR)}{" "}
+                        <span className="text-xs font-normal">ر.س</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-sidebar-foreground/60 mb-0.5">ربح الوحدة</p>
+                      <p className={`text-lg font-bold ${profitPositive ? "text-green-400" : "text-red-400"}`}>
+                        {formatNumber(calculated.netProfitPerUnitSAR)}{" "}
+                        <span className="text-xs font-normal">ر.س</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <Separator className="bg-sidebar-border" />
 
+                {/* Margin + ROI */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <p className="text-xs text-sidebar-foreground/70">هامش الربح</p>
-                    <p className={`text-xl font-bold ${calculated.netProfitMarginPct > 0 ? 'text-green-400' : calculated.netProfitMarginPct < 0 ? 'text-red-400' : ''}`}>
+                    <p className={`text-xl font-bold ${calculated.netProfitMarginPct > 0 ? "text-green-400" : calculated.netProfitMarginPct < 0 ? "text-red-400" : ""}`}>
                       {formatNumber(calculated.netProfitMarginPct, 1)}%
                     </p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-sidebar-foreground/70">العائد (ROI)</p>
-                    <p className={`text-xl font-bold ${calculated.roiPct > 0 ? 'text-green-400' : calculated.roiPct < 0 ? 'text-red-400' : ''}`}>
+                    <p className={`text-xl font-bold ${calculated.roiPct > 0 ? "text-green-400" : calculated.roiPct < 0 ? "text-red-400" : ""}`}>
                       {formatNumber(calculated.roiPct, 1)}%
                     </p>
                   </div>
@@ -303,6 +336,7 @@ export default function Calculator() {
 
                 <Separator className="bg-sidebar-border" />
 
+                {/* CBM / Cartons / Risk */}
                 <div className="grid grid-cols-3 gap-2 text-center text-sm">
                   <div>
                     <p className="text-xs text-sidebar-foreground/60 mb-1">CBM إجمالي</p>
@@ -315,8 +349,8 @@ export default function Calculator() {
                   <div>
                     <p className="text-xs text-sidebar-foreground/60 mb-1">المخاطرة</p>
                     <div className={`mx-auto w-fit px-2 py-0.5 rounded text-xs font-bold ${
-                      calculated.riskScore <= 3 ? "bg-green-500/20 text-green-400" : 
-                      calculated.riskScore <= 6 ? "bg-yellow-500/20 text-yellow-400" : 
+                      calculated.riskScore <= 3 ? "bg-green-500/20 text-green-400" :
+                      calculated.riskScore <= 6 ? "bg-yellow-500/20 text-yellow-400" :
                       "bg-red-500/20 text-red-400"
                     }`}>
                       {riskLabel} ({calculated.riskScore}/10)
@@ -325,8 +359,8 @@ export default function Calculator() {
                 </div>
 
                 {watchAll.productName && !editingId && (
-                  <Button 
-                    className="w-full mt-4 gap-2 bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90" 
+                  <Button
+                    className="w-full mt-2 gap-2 bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"
                     onClick={() => form.handleSubmit(onSubmit)()}
                   >
                     <Save className="w-4 h-4" /> حفظ الدراسة
@@ -339,9 +373,46 @@ export default function Calculator() {
 
       </div>
 
-      {/* Saved Studies */}
+      {/* ── Saved Studies ──────────────────────────────────────────────────────── */}
       <div className="space-y-4 pt-8">
-        <h3 className="text-xl font-bold border-b pb-2">الدراسات المحفوظة ({studies.length})</h3>
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <h3 className="text-xl font-bold">الدراسات المحفوظة ({studies.length})</h3>
+
+          {studies.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-2 text-xs" onClick={toggleSelectAll}>
+                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
+                {allSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+              </Button>
+
+              <AnimatePresence>
+                {someSelected && (
+                  <motion.div
+                    className="flex items-center gap-2"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-1 rounded-full">
+                      {selectedIds.size} محدد
+                    </span>
+                    <Button size="sm" variant="outline" className="gap-2 text-blue-600 border-blue-300 hover:bg-blue-50" onClick={handleMultiPDF}>
+                      <FileText className="w-4 h-4" /> تصدير PDF
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-2 text-green-600 border-green-300 hover:bg-green-50" onClick={handleMultiExcel}>
+                      <FileSpreadsheet className="w-4 h-4" /> تصدير Excel
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+
+        {/* Cards */}
         {studies.length === 0 ? (
           <div className="text-center py-12 bg-muted/20 rounded-xl border border-dashed">
             <CalcIcon className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
@@ -352,34 +423,60 @@ export default function Calculator() {
             {studies.map((study) => {
               const calc = calculateFeasibility(study);
               const isActive = editingId === study.id;
+              const isChecked = selectedIds.has(study.id);
+              const profit = calc.netProfitSAR;
+
               return (
-                <Card key={study.id} className={`transition-all ${isActive ? 'ring-2 ring-primary border-primary' : 'hover:border-primary/50'}`}>
-                  <CardHeader className="p-4 pb-2 flex flex-row items-start justify-between space-y-0">
-                    <div>
-                      <CardTitle className="text-base font-bold line-clamp-1" title={study.productName}>{study.productName}</CardTitle>
-                      <CardDescription className="text-xs mt-1">
-                        {new Date(study.updatedAt).toLocaleDateString('ar-SA')}
-                      </CardDescription>
+                <Card
+                  key={study.id}
+                  className={`transition-all ${
+                    isChecked ? "ring-2 ring-primary border-primary bg-primary/5" :
+                    isActive ? "ring-2 ring-primary border-primary" :
+                    "hover:border-primary/50"
+                  }`}
+                >
+                  <CardHeader className="p-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleSelect(study.id)}
+                        className="mt-0.5 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-bold line-clamp-1" title={study.productName}>
+                          {study.productName}
+                        </CardTitle>
+                        <CardDescription className="text-xs mt-1">
+                          {new Date(study.updatedAt).toLocaleDateString("ar-SA")}
+                        </CardDescription>
+                      </div>
                     </div>
-                    <div className={`px-2 py-1 rounded text-xs font-bold ${
-                      calc.riskScore <= 3 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : 
-                      calc.riskScore <= 6 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" : 
-                      "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                    <div className={`shrink-0 px-2 py-1 rounded text-xs font-bold ${
+                      calc.riskScore <= 3 ? "bg-green-100 text-green-700" :
+                      calc.riskScore <= 6 ? "bg-yellow-100 text-yellow-700" :
+                      "bg-red-100 text-red-700"
                     }`}>
                       مخاطرة {calc.riskScore}/10
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 pt-2">
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-4">
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                       <div className="bg-muted p-2 rounded">
                         <p className="text-muted-foreground text-xs">ROI</p>
-                        <p className="font-bold text-green-600 dark:text-green-400">{formatNumber(calc.roiPct, 1)}%</p>
+                        <p className="font-bold text-green-600">{formatNumber(calc.roiPct, 1)}%</p>
                       </div>
                       <div className="bg-muted p-2 rounded">
                         <p className="text-muted-foreground text-xs">تكلفة الوحدة</p>
-                        <p className="font-bold">{formatNumber(calc.costPerUnitLandedSAR, 2)} <span className="text-[10px]">SAR</span></p>
+                        <p className="font-bold">{formatNumber(calc.costPerUnitLandedSAR, 2)} <span className="text-[10px]">ر.س</span></p>
                       </div>
                     </div>
+
+                    {/* Profit row */}
+                    <div className={`flex items-center justify-between px-2 py-1.5 rounded text-xs mb-3 ${profit >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                      <span>الربح الإجمالي:</span>
+                      <span className="font-bold">{formatNumber(profit, 0)} ر.س</span>
+                    </div>
+
                     <div className="flex flex-wrap gap-2 justify-end">
                       <Button variant="outline" size="sm" className="h-8 flex-1" onClick={() => handleEdit(study)}>
                         <Edit className="w-3.5 h-3.5 ml-1.5" /> تعديل
