@@ -80,6 +80,7 @@
   },
   "dependencies": {
     "bidi-js": "^1.0.3",
+    "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "papaparse": "^5.5.4"

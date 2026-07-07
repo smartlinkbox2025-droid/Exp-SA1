@@ -1,1 +1,1 @@
-- [Arabic PDF rendering with jsPDF](arabic-pdf-jspdf.md) — Cairo TTF + presentation-form reshaper + fmt() (en-US digits); see topic file for full approach and pitfalls.
+- [Arabic PDF rendering with jsPDF](arabic-pdf-jspdf.md) — use html2canvas+jsPDF (browser renders Arabic natively); never use jsPDF text API for Arabic.

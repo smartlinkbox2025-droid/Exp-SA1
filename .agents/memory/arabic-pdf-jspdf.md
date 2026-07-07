@@ -1,27 +1,29 @@
 ---
 name: Arabic PDF rendering with jsPDF
-description: How to render readable Arabic text in jsPDF for the china-import-tracker project, including font loading, reshaping, and number formatting.
+description: How to render readable Arabic text in PDFs for the china-import-tracker project.
 ---
 
-## The Rule
+## Chosen Approach: html2canvas + jsPDF
 
-1. **Font**: Embed Cairo TTF (Regular + Bold) via `doc.addFileToVFS` + `doc.addFont`. Fetch from `/fonts/Cairo-*.ttf`, cache base64 at module scope. Helvetica has no Arabic glyph coverage.
+**Do NOT use jsPDF text rendering for Arabic.** Even with embedded fonts (Cairo TTF), Arabic requires OpenType shaping that jsPDF cannot do. This produces garbled or disconnected letters.
 
-2. **Text reshaping**: Call `ar(text)` from `src/lib/arabicReshaper.ts` on every Arabic string before passing to jsPDF. The reshaper converts Unicode letters to contextual presentation forms (U+FE70-U+FEFF), applies mandatory Lam-Alef ligatures, and reverses the string for LTR rendering.
+**The correct approach:**
+1. Build an off-screen HTML `div` (positioned at `left:-9999px`) with `direction:rtl` and any Arabic-capable font in `font-family`.
+2. Render it with `html2canvas({ scale:2, backgroundColor:'#ffffff' })` — the browser's own text engine handles shaping correctly.
+3. Convert the canvas to JPEG with `canvas.toDataURL('image/jpeg', 0.92)`.
+4. Embed in jsPDF with `doc.addImage(imgData, 'JPEG', x, y, w, h)`.
 
-3. **Number formatting**: `formatNumber()` uses `ar-SA` locale → Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) that show as garbled chars in Helvetica. Use a `fmt()` helper with `en-US` locale for all PDF numeric values. `formatNumber()` is correct for on-screen display.
+**Why:** The browser's native text engine correctly applies OpenType shaping, RTL bidirectionality, and Arabic contextual forms. html2canvas captures the rendered pixels exactly. No font embedding, no reshaping library needed.
 
-4. **Table styles**: In jsPDF-autotable, set `styles: { font: 'Cairo' }` on every table. Set `halign: 'right'` on cells containing Arabic user data.
+**Number formatting:** Use `en-US` locale (`num.toLocaleString('en-US', ...)`) for numbers in PDFs. `ar-SA` produces Arabic-Indic digits that may not align well in the captured HTML.
 
-5. **Async**: All PDF export functions must be `async` (they await the font loader). Page callers use `await` or `.catch(console.error)` on single-item inline buttons.
+## Excel (SheetJS)
 
-**Why:** Helvetica encodes Arabic codepoints as WinAnsi bytes, mapping them to random Latin glyphs (produces `þæþô...` or `ikd\`` garbage). Arabic-Indic digits from `ar-SA` locale are also in the Arabic Unicode range, causing the same encoding failure.
+xlsx (SheetJS) with `bookType:'xlsx', type:'array'` handles Arabic UTF-8 natively — no special encoding needed. The `.xlsx` format is internally XML with UTF-8. Arabic strings pass through correctly.
 
-## Reshaper correctness rules (arabicReshaper.ts)
+## How to apply
 
-- `rightConn = isDual(prevCh)` — ONLY dual-joining (D-type) prev letters provide a right connection. R-type letters (alef ا, waw و, ra ر, dal د, etc.) cannot extend leftward, so letters after them must be INITIAL or ISOLATED.
-- `isDual()` excludes both `RIGHT_ONLY` set AND `NON_JOINING` set (currently: ء hamza).
-- ء (U+0621 hamza standalone) is NON_JOINING (U-type): must be in `NON_JOINING` set so adjacent letters are not drawn connecting through it.
-- Lam-Alef ligature selection also uses `isDual(prevCh)` (same rule as rightConn).
-
-**How to apply:** Any future edits to arabicReshaper.ts must preserve the isDual-based rightConn. The naive isJoinable-based approach incorrectly joins after R-type letters.
+- `mkContainer(widthPx)`: creates the off-screen element, appends to body
+- `pagesToPDF(pages, filename, orientation)`: renders each element as a PDF page, saves
+- All PDF functions are `async` (they await `html2canvas`)
+- Page callers use `await` or `.catch(console.error)` for inline buttons
