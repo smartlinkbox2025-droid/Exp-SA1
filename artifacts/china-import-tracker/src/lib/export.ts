@@ -1,134 +1,340 @@
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import Papa from "papaparse";
-import { formatNumber, calculateFeasibility } from "./calculations";
+import * as XLSX from "xlsx";
+import { formatNumber, calculateFeasibility, calculatePackingListTotals } from "./calculations";
 import { FeasibilityStudy, PackingList } from "./storage";
 
-// Arabic text in PDF can be tricky with standard fonts in jsPDF. 
-// A common workaround is to use a font that supports Arabic (like Amiri or Arial if provided).
-// For jsPDF, we might need to add a custom font if it supports it, but standard jsPDF doesn't natively shape Arabic perfectly.
-// Since adding an Arabic VFS might exceed file size, we will export standard PDFs but labels might be basic.
-// Actually, let's keep headers simple or rely on English if Arabic PDF fails, but we'll try to write Arabic text.
-// Note: jsPDF without a proper Arabic shaping library and font might render letters left-to-right and detached.
-// For the sake of this test, we'll implement a basic structure.
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function todayStr() {
+  return new Date().toLocaleDateString("en-GB"); // DD/MM/YYYY
+}
+
+// ─── PDF – Feasibility Study ─────────────────────────────────────────────────
 
 export function exportStudyPDF(study: FeasibilityStudy) {
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const calc = calculateFeasibility(study);
-  
-  doc.setFontSize(20);
-  doc.text("Feasibility Study - مستورد الصين", 14, 22);
-  
-  doc.setFontSize(12);
-  doc.text(`Product: ${study.productName}`, 14, 32);
-  doc.text(`Date: ${new Date(study.updatedAt).toLocaleDateString('ar-SA')}`, 14, 40);
+  const pageW = doc.internal.pageSize.getWidth();
 
-  const tableData = [
-    ["Parameter", "Value"],
-    ["Factory Price", `${study.factoryPrice} ${study.currency}`],
-    ["Quantity", `${study.quantity}`],
-    ["Domestic Shipping (RMB)", `${study.domesticShippingRMB}`],
-    ["Sea/Air Freight (SAR)", `${study.freightCostSAR}`],
-    ["Custom Duty %", `${study.customDutyPct}%`],
-    ["Total Landed Cost (SAR)", `${formatNumber(calc.totalLandedCostSAR)}`],
-    ["Cost per Unit Landed (SAR)", `${formatNumber(calc.costPerUnitLandedSAR)}`],
-    ["Target Selling Price (SAR)", `${study.targetSellingPrice}`],
-    ["Net Profit Margin %", `${formatNumber(calc.netProfitMarginPct)}%`],
-    ["ROI %", `${formatNumber(calc.roiPct)}%`],
-    ["Risk Score", `${calc.riskScore} / 10`],
-  ];
+  // Header bar
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageW, 28, "F");
 
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("Feasibility Study Report", pageW / 2, 12, { align: "center" });
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("مستورد الصين  |  China Import Tracker", pageW / 2, 20, { align: "center" });
+
+  // Reset text colour
+  doc.setTextColor(30, 30, 30);
+
+  // Product info block
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text(study.productName, 14, 38);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Date: ${todayStr()}   |   Currency: ${study.currency}   |   Qty: ${study.quantity} units`, 14, 44);
+
+  doc.setTextColor(30, 30, 30);
+
+  // ── Section 1: Input parameters ──────────────────────────────────────────
   (doc as any).autoTable({
     startY: 50,
-    head: [["Metric", "Details"]],
-    body: tableData,
-    theme: 'grid',
-    styles: { font: "helvetica", halign: 'right' },
-    headStyles: { fillColor: [15, 23, 42] } // navy
+    head: [["Input Parameter", "Value"]],
+    body: [
+      ["Factory Unit Price", `${study.factoryPrice} ${study.currency}`],
+      ["Quantity", `${study.quantity} units`],
+      ["Units per Carton", `${study.unitsPerCarton}`],
+      ["Carton Dimensions (cm)", `${study.cartonLength} × ${study.cartonWidth} × ${study.cartonHeight}`],
+      ["Gross Weight / Carton (kg)", `${study.grossWeight ?? "—"}`],
+      ["Domestic Shipping China (RMB)", `${study.domesticShippingRMB}`],
+      ["Sea / Air Freight (SAR)", `${formatNumber(study.freightCostSAR)}`],
+      ["Custom Duty %", `${study.customDutyPct}%`],
+      ["VAT %", `${study.vatPct}%`],
+      ["Customs Clearance Fee (SAR)", `${formatNumber(study.clearanceFeeSAR)}`],
+      ["Saudi Internal Logistics (SAR)", `${formatNumber(study.localLogisticsSAR)}`],
+      ["SABER / SFDA Certification (SAR)", `${formatNumber(study.certificationFeeSAR)}`],
+      ["Target Selling Price / Unit (SAR)", `${formatNumber(study.targetSellingPrice)}`],
+    ],
+    theme: "striped",
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 0: { fontStyle: "bold", cellWidth: 90 }, 1: { halign: "right" } },
   });
 
-  doc.save(`Study_${study.productName}.pdf`);
-}
+  // ── Section 2: Results ───────────────────────────────────────────────────
+  const afterTable = (doc as any).lastAutoTable.finalY + 8;
 
-export function exportStudyCSV(study: FeasibilityStudy) {
-  const calc = calculateFeasibility(study);
-  const data = [
-    {
-      Product: study.productName,
-      "Factory Price": study.factoryPrice,
-      Currency: study.currency,
-      Quantity: study.quantity,
-      "Total Landed Cost SAR": calc.totalLandedCostSAR,
-      "Cost per Unit SAR": calc.costPerUnitLandedSAR,
-      "Net Profit %": calc.netProfitMarginPct,
-      "ROI %": calc.roiPct,
-      "Risk Score": calc.riskScore
-    }
-  ];
-  
-  const csv = Papa.unparse(data);
-  const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `Study_${study.productName}.csv`;
-  link.click();
-}
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 23, 42);
+  doc.text("Calculated Results", 14, afterTable);
 
-export function exportPackingListPDF(list: PackingList) {
-  const doc = new jsPDF();
-  
-  doc.setFontSize(20);
-  doc.text("Packing List - بيان التعبئة", 14, 22);
-  
-  doc.setFontSize(12);
-  doc.text(`Supplier: ${list.supplierName}`, 14, 32);
-  doc.text(`B/L Number: ${list.billOfLading}`, 14, 40);
-  doc.text(`Description: ${list.goodsDescription}`, 14, 48);
-  doc.text(`Date: ${new Date(list.updatedAt).toLocaleDateString('ar-SA')}`, 14, 56);
-
-  const tableData = list.items.map(item => [
-    item.productName,
-    item.cartonsCount.toString(),
-    item.unitsPerCarton.toString(),
-    item.netWeightPerCarton.toString(),
-    item.grossWeightPerCarton.toString(),
-    `${item.length}x${item.width}x${item.height}`,
-    item.unitValueUSD.toString()
-  ]);
+  const riskColor =
+    calc.riskScore <= 3
+      ? [34, 197, 94]
+      : calc.riskScore <= 6
+      ? [234, 179, 8]
+      : [239, 68, 68];
 
   (doc as any).autoTable({
-    startY: 65,
-    head: [["Product", "Cartons", "Units/Ctn", "NW/Ctn(kg)", "GW/Ctn(kg)", "LxWxH(cm)", "Unit USD"]],
-    body: tableData,
-    theme: 'grid',
-    styles: { font: "helvetica", halign: 'center' },
-    headStyles: { fillColor: [15, 23, 42] }
+    startY: afterTable + 4,
+    head: [["Result Metric", "Value"]],
+    body: [
+      ["Total Landed Cost (SAR)", formatNumber(calc.totalLandedCostSAR)],
+      ["Cost per Unit Landed (SAR)", formatNumber(calc.costPerUnitLandedSAR)],
+      ["Recommended Min. Selling Price (SAR)", formatNumber(calc.recommendedMinPriceSAR)],
+      ["Net Profit Margin %", `${formatNumber(calc.netProfitMarginPct)}%`],
+      ["ROI %", `${formatNumber(calc.roiPct)}%`],
+      ["Total Volume (CBM)", formatNumber(calc.totalCBM, 3)],
+      ["Total Cartons", `${calc.totalCartons}`],
+      ["Risk Score", `${calc.riskScore} / 10`],
+    ],
+    theme: "grid",
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+    styles: { fontSize: 10, cellPadding: 3.5 },
+    columnStyles: { 0: { fontStyle: "bold", cellWidth: 90 }, 1: { halign: "right" } },
+    didDrawCell: (data: any) => {
+      if (data.row.index === 7 && data.column.index === 1) {
+        doc.setTextColor(...(riskColor as [number, number, number]));
+      } else {
+        doc.setTextColor(30, 30, 30);
+      }
+    },
   });
 
-  doc.save(`PackingList_${list.billOfLading}.pdf`);
+  // Footer
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.text("Generated by مستورد الصين  –  China Import Tracker", pageW / 2, pageH - 6, { align: "center" });
+
+  doc.save(`جدوى_${study.productName}_${todayStr().replace(/\//g, "-")}.pdf`);
 }
 
-export function exportPackingListCSV(list: PackingList) {
-  const data = list.items.map(item => ({
-    "Supplier": list.supplierName,
-    "B/L Number": list.billOfLading,
-    "Product": item.productName,
-    "Cartons": item.cartonsCount,
-    "Units/Ctn": item.unitsPerCarton,
-    "NW/Ctn (kg)": item.netWeightPerCarton,
-    "GW/Ctn (kg)": item.grossWeightPerCarton,
-    "Length (cm)": item.length,
-    "Width (cm)": item.width,
-    "Height (cm)": item.height,
-    "Unit Value (USD)": item.unitValueUSD
-  }));
-  
-  const csv = Papa.unparse(data);
-  const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `PackingList_${list.billOfLading}.csv`;
-  link.click();
+// ─── Excel – Feasibility Study ───────────────────────────────────────────────
+
+export function exportStudyExcel(study: FeasibilityStudy) {
+  const calc = calculateFeasibility(study);
+
+  const inputRows = [
+    ["بيانات المدخلات", ""],
+    ["اسم المنتج", study.productName],
+    ["العملة", study.currency],
+    ["سعر المصنع لكل وحدة", study.factoryPrice],
+    ["الكمية المطلوبة", study.quantity],
+    ["قطع بالكرتونة", study.unitsPerCarton],
+    ["طول الكرتونة (سم)", study.cartonLength],
+    ["عرض الكرتونة (سم)", study.cartonWidth],
+    ["ارتفاع الكرتونة (سم)", study.cartonHeight],
+    ["الشحن الداخلي في الصين (يوان)", study.domesticShippingRMB],
+    ["تكلفة الشحن البحري/الجوي (ر.س)", study.freightCostSAR],
+    ["الرسوم الجمركية %", study.customDutyPct],
+    ["ضريبة القيمة المضافة %", study.vatPct],
+    ["أجور التخليص الجمركي (ر.س)", study.clearanceFeeSAR],
+    ["الشحن الداخلي للمستودع (ر.س)", study.localLogisticsSAR],
+    ["رسوم الشهادات سابر/SFDA (ر.س)", study.certificationFeeSAR],
+    ["سعر البيع المستهدف لكل وحدة (ر.س)", study.targetSellingPrice],
+    ["", ""],
+    ["نتائج دراسة الجدوى", ""],
+    ["إجمالي التكلفة واصل المستودع (ر.س)", calc.totalLandedCostSAR],
+    ["التكلفة لكل وحدة واصل (ر.س)", calc.costPerUnitLandedSAR],
+    ["السعر الأدنى المقترح للبيع (ر.س)", calc.recommendedMinPriceSAR],
+    ["هامش الربح الصافي %", calc.netProfitMarginPct],
+    ["العائد على الاستثمار ROI %", calc.roiPct],
+    ["إجمالي الحجم CBM", calc.totalCBM],
+    ["إجمالي عدد الكراتين", calc.totalCartons],
+    ["نسبة المخاطرة (من 10)", calc.riskScore],
+    ["", ""],
+    ["تاريخ الإنشاء", todayStr()],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(inputRows);
+
+  // Column widths
+  ws["!cols"] = [{ wch: 38 }, { wch: 20 }];
+
+  // Section header styles via cell comment (SheetJS CE doesn't support style; we use bold via sheet name)
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "دراسة الجدوى");
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  triggerDownload(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    `جدوى_${study.productName}_${todayStr().replace(/\//g, "-")}.xlsx`
+  );
+}
+
+// ─── PDF – Packing List ──────────────────────────────────────────────────────
+
+export function exportPackingListPDF(list: PackingList) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const totals = calculatePackingListTotals(list.items);
+  const pageW = doc.internal.pageSize.getWidth();
+
+  // Header bar
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageW, 28, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("PACKING LIST  /  بيان التعبئة", pageW / 2, 12, { align: "center" });
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("مستورد الصين  |  China Import Tracker", pageW / 2, 20, { align: "center" });
+
+  // Meta info
+  doc.setTextColor(30, 30, 30);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("Supplier:", 14, 36);
+  doc.text("B/L No:", 14, 42);
+  doc.text("Description:", 14, 48);
+  doc.text("Date:", 14, 54);
+
+  doc.setFont("helvetica", "normal");
+  doc.text(list.supplierName, 48, 36);
+  doc.text(list.billOfLading, 48, 42);
+  doc.text(list.goodsDescription, 48, 48);
+  doc.text(todayStr(), 48, 54);
+
+  // Items table
+  (doc as any).autoTable({
+    startY: 60,
+    head: [["#", "Product / المنتج", "Cartons", "Units/Ctn", "NW/Ctn (kg)", "GW/Ctn (kg)", "L×W×H (cm)", "CBM/Ctn", "Unit Value (USD)", "Total Value (USD)"]],
+    body: [
+      ...list.items.map((item, i) => {
+        const cbm = (item.length * item.width * item.height) / 1_000_000;
+        const totalValue = item.unitValueUSD * item.unitsPerCarton * item.cartonsCount;
+        return [
+          i + 1,
+          item.productName,
+          item.cartonsCount,
+          item.unitsPerCarton,
+          item.netWeightPerCarton,
+          item.grossWeightPerCarton,
+          `${item.length}×${item.width}×${item.height}`,
+          cbm.toFixed(3),
+          item.unitValueUSD.toFixed(2),
+          totalValue.toFixed(2),
+        ];
+      }),
+      // Totals row
+      [
+        { content: "TOTAL", colSpan: 2, styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+        { content: totals.totalCartons, styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+        { content: "", styles: { fillColor: [15, 23, 42] } },
+        { content: totals.totalNetWeight.toFixed(2) + " kg", styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+        { content: totals.totalGrossWeight.toFixed(2) + " kg", styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+        { content: "", styles: { fillColor: [15, 23, 42] } },
+        { content: totals.totalCBM.toFixed(3) + " m³", styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+        { content: "", styles: { fillColor: [15, 23, 42] } },
+        { content: "$ " + totals.totalValueUSD.toFixed(2), styles: { fontStyle: "bold", fillColor: [15, 23, 42], textColor: 255 } },
+      ],
+    ],
+    theme: "striped",
+    headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold", fontSize: 9 },
+    alternateRowStyles: { fillColor: [245, 247, 250] },
+    styles: { fontSize: 8.5, cellPadding: 2.5, halign: "center" },
+    columnStyles: { 1: { halign: "left" } },
+  });
+
+  // Footer
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.text("Generated by مستورد الصين  –  China Import Tracker", pageW / 2, pageH - 6, { align: "center" });
+
+  doc.save(`PackingList_${list.billOfLading}_${todayStr().replace(/\//g, "-")}.pdf`);
+}
+
+// ─── Excel – Packing List ────────────────────────────────────────────────────
+
+export function exportPackingListExcel(list: PackingList) {
+  const totals = calculatePackingListTotals(list.items);
+
+  const headerRows = [
+    ["بيان التعبئة  –  Packing List", "", "", "", "", "", "", "", "", ""],
+    ["المورد / Supplier:", list.supplierName, "", "", "", "", "", "", "", ""],
+    ["رقم البوليصة / B/L No:", list.billOfLading, "", "", "", "", "", "", "", ""],
+    ["وصف البضاعة / Description:", list.goodsDescription, "", "", "", "", "", "", "", ""],
+    ["التاريخ / Date:", todayStr(), "", "", "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", "", ""],
+    [
+      "#",
+      "المنتج / Product",
+      "عدد الكراتين",
+      "قطع/كرتون",
+      "وزن صافي/كرتون (كغ)",
+      "وزن إجمالي/كرتون (كغ)",
+      "الطول (سم)",
+      "العرض (سم)",
+      "الارتفاع (سم)",
+      "القيمة لكل وحدة (USD)",
+    ],
+    ...list.items.map((item, i) => [
+      i + 1,
+      item.productName,
+      item.cartonsCount,
+      item.unitsPerCarton,
+      item.netWeightPerCarton,
+      item.grossWeightPerCarton,
+      item.length,
+      item.width,
+      item.height,
+      item.unitValueUSD,
+    ]),
+    ["", "", "", "", "", "", "", "", "", ""],
+    [
+      "الإجماليات",
+      "",
+      totals.totalCartons,
+      "",
+      totals.totalNetWeight.toFixed(2) + " kg",
+      totals.totalGrossWeight.toFixed(2) + " kg",
+      "",
+      "",
+      "",
+      "$ " + totals.totalValueUSD.toFixed(2),
+    ],
+    ["", "", "", "", "", "", "", "", "", ""],
+    ["إجمالي الحجم (CBM):", totals.totalCBM.toFixed(3), "", "", "", "", "", "", "", ""],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(headerRows);
+  ws["!cols"] = [
+    { wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 10 },
+    { wch: 20 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 20 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "بيان التعبئة");
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  triggerDownload(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    `PackingList_${list.billOfLading}_${todayStr().replace(/\//g, "-")}.xlsx`
+  );
 }

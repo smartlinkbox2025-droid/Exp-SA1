@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { FeasibilityStudySchema, FeasibilityStudy, Currency } from "@/lib/storage";
 import { useFeasibilityStudies } from "@/hooks/useLocalStorage";
 import { calculateFeasibility, formatNumber, RATES } from "@/lib/calculations";
-import { exportStudyPDF, exportStudyCSV } from "@/lib/export";
+import { exportStudyPDF, exportStudyExcel } from "@/lib/export";
 import { 
   Card, CardContent, CardHeader, CardTitle, CardDescription 
 } from "@/components/ui/card";
@@ -390,7 +390,7 @@ export default function Calculator() {
                       <Button variant="outline" size="sm" className="h-8 px-2 text-blue-600" onClick={() => exportStudyPDF(study)} title="تصدير PDF">
                         <FileText className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportStudyCSV(study)} title="تصدير Excel">
+                      <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportStudyExcel(study)} title="تصدير Excel">
                         <Download className="w-3.5 h-3.5" />
                       </Button>
                       <Button variant="outline" size="sm" className="h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(study.id)} title="حذف">

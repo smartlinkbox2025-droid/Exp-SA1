@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { PackingListSchema, PackingList, PackingListItem } from "@/lib/storage";
 import { usePackingLists } from "@/hooks/useLocalStorage";
 import { calculatePackingListTotals, formatNumber } from "@/lib/calculations";
-import { exportPackingListPDF, exportPackingListCSV } from "@/lib/export";
+import { exportPackingListPDF, exportPackingListExcel } from "@/lib/export";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -295,7 +295,7 @@ export default function PackingListManager() {
                       <Button variant="outline" size="sm" className="h-8 px-2 text-blue-600" onClick={() => exportPackingListPDF(list)} title="تصدير PDF">
                         <FileText className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportPackingListCSV(list)} title="تصدير Excel">
+                      <Button variant="outline" size="sm" className="h-8 px-2 text-green-600" onClick={() => exportPackingListExcel(list)} title="تصدير Excel">
                         <Download className="w-3.5 h-3.5" />
                       </Button>
                       <Button variant="outline" size="sm" className="h-8 px-2 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(list.id)} title="حذف">
